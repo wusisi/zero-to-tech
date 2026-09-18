@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from fastapi import FastAPI
 from pypinyin import lazy_pinyin, Style
 from snownlp import SnowNLP
+import json
+from datetime import datetime, timezone
 
 app = FastAPI()
 
@@ -33,6 +35,21 @@ profile = {
 class AnalyzeRequest(BaseModel):
     text: str
 
+HISTORY_FILE = "history.json"
+
+def load_history():
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+def save_record(record):
+    records = load_history()
+    records.append(record)
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False, indent=2)
+
 @app.get("/api/profile")
 def get_profile():
     return profile
@@ -49,9 +66,18 @@ def score_label(score):
 def analyze(req: AnalyzeRequest):
     score = SnowNLP(req.text).sentiments
     pinyin = " ".join(lazy_pinyin(req.text, style=Style.TONE))
-    return {
+    result = {
         "text": req.text,
         "score": score,
         "label": score_label(score),
         "pinyin": pinyin,
+        "created_at": datetime.now(timezone.utc).isoformat(timespec='seconds')
     }
+    save_record(result)
+    return result
+
+@app.get("/api/history")
+def get_history():
+    records = load_history()
+    records.reverse()  # Reverse the order to show the most recent first
+    return records[:10]
